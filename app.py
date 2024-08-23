@@ -1,6 +1,6 @@
 import asyncio
 from base64 import urlsafe_b64encode
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from os import urandom
 from pathlib import Path
 
@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import Mapped, mapped_column
 from wtforms import SelectField, TextAreaField
 from wtforms.validators import DataRequired
+from apscheduler.schedulers.background import BackgroundScheduler
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "top secret!"
@@ -22,6 +23,7 @@ app.config["SQLALCHEMY_DATABASE_URI"] = (
     f"sqlite+aiosqlite:///{Path(__file__).parent / 'db.sqlite'}"
 )
 db = SQLAlchemy(app)
+scheduler = BackgroundScheduler()
 
 
 class PasteForm(FlaskForm):
@@ -44,6 +46,7 @@ class Paste(db.Model):
     timestamp: Mapped[datetime] = mapped_column(
         default=lambda: datetime.now(timezone.utc), index=True
     )
+    deleted: Mapped[bool] = mapped_column(default=False)
 
 
 with app.app_context():
@@ -57,6 +60,26 @@ with app.app_context():
     asyncio.run(initdb())
 
 
+async def cleanup_old_pastes():
+    with app.app_context():
+        async with db.Session() as session:
+            # let deleted prop turn true if pastes older than 1 hour
+            await session.execute(
+                db.update(Paste)
+                .where(Paste.timestamp < datetime.now() - timedelta(minutes=1))
+                .values(deleted=True)
+            )
+            await session.commit()
+
+
+def sync_cleanup_old_pastes():
+    asyncio.run(cleanup_old_pastes())
+
+
+scheduler.add_job(func=sync_cleanup_old_pastes, trigger="interval", minutes=1)
+scheduler.start()
+
+
 @app.route("/", methods=["GET", "POST"])
 async def index():
     async with db.Session() as session:
@@ -66,7 +89,13 @@ async def index():
             session.add(paste)
             await session.commit()
             return redirect(url_for("paste", id=paste.id))
-        query = db.select(Paste).order_by(Paste.timestamp.desc()).limit(10)
+        # query = db.select(Paste).order_by(Paste.timestamp.desc()).limit(10)
+        query = (
+            db.select(Paste)
+            .order_by(Paste.timestamp.desc())
+            .filter(Paste.deleted == False)
+            .limit(10)
+        )
         pastes = [paste async for paste in await session.stream_scalars(query)]
         return render_template("index.html", form=form, pastes=pastes)
 
@@ -74,7 +103,11 @@ async def index():
 @app.get("/<id>")
 async def paste(id):
     async with db.Session() as session:
-        paste = await session.get(Paste, id)
+        # paste = await session.get(Paste, id)
+        # search by id and check if it's not deleted
+        paste = (
+            await session.execute(db.select(Paste).filter_by(id=id, deleted=False))
+        ).scalar_one_or_none()
         if not paste:
             abort(404)
         lexer = get_lexer_by_name(paste.language, stripall=True)
