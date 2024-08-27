@@ -34,12 +34,32 @@
   let copyBtn = document.querySelector(".copy");
   copyBtn.addEventListener("click", async () => {
     try {
-      await navigator.clipboard.writeText(
-        document.querySelector(".highlight > :not(button)").textContent
-      );
-      copyBtn.textContent = "copied!";
+      // 创建一个临时文本区域来保存要复制的文本
+      const textToCopy = document.querySelector(
+        ".highlight > :not(button)"
+      ).textContent;
+      if (!textToCopy) {
+        throw new Error("No text to copy");
+      }
+
+      const tempTextarea = document.createElement("textarea");
+      tempTextarea.value = textToCopy;
+
+      // 将文本区域添加到文档中并选择文本
+      document.body.appendChild(tempTextarea);
+      tempTextarea.select();
+
+      // 执行复制命令
+      const successful = document.execCommand("copy");
+      document.body.removeChild(tempTextarea); // 删除临时文本区域
+
+      if (successful) {
+        copyBtn.textContent = "Copied!";
+      } else {
+        throw new Error("Copy command failed");
+      }
     } catch (err) {
-      alert("Copy failed:", err);
+      alert("Copy failed: " + err.message);
     }
   });
 </script>
