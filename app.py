@@ -16,15 +16,26 @@ from sqlalchemy.orm import Mapped, mapped_column
 from wtforms import SelectField, TextAreaField
 from wtforms.validators import DataRequired
 from apscheduler.schedulers.background import BackgroundScheduler
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
+def external_url_for(endpoint, **values):
+    url = url_for(endpoint, _external=True, **values)
+    # 替换为自定义域名
+    return url.replace('127.0.0.1:5000', os.environ.get("SERVER_NAME"))
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "top secret!"
 app.config["SQLALCHEMY_DATABASE_URI"] = (
     f"sqlite+aiosqlite:///{Path(__file__).parent / 'db.sqlite'}"
 )
+app.jinja_env.globals['external_url_for'] = external_url_for
 db = SQLAlchemy(app)
 scheduler = BackgroundScheduler()
 
+from flask import url_for
 
 class PasteForm(FlaskForm):
     body = TextAreaField("Body", validators=[DataRequired()])
@@ -66,7 +77,7 @@ async def cleanup_old_pastes():
             # let deleted prop turn true if pastes older than 1 hour
             await session.execute(
                 db.update(Paste)
-                .where(Paste.timestamp < datetime.now() - timedelta(minutes=1))
+                .where(Paste.timestamp < datetime.now() - timedelta(minutes=10))
                 .values(deleted=True)
             )
             await session.commit()
@@ -76,7 +87,7 @@ def sync_cleanup_old_pastes():
     asyncio.run(cleanup_old_pastes())
 
 
-scheduler.add_job(func=sync_cleanup_old_pastes, trigger="interval", minutes=1)
+scheduler.add_job(func=sync_cleanup_old_pastes, trigger="interval", minutes=10)
 scheduler.start()
 
 
@@ -114,6 +125,8 @@ async def paste(id):
         formatter = HtmlFormatter(lineos=True, cssclass="source")
         highlight_body = highlight(paste.body, lexer, formatter)
         highlight_css = formatter.get_style_defs(".source")
+        app.logger.info(f"Paste {id} viewed")
+        app.logger.info(f"paste: {paste}")
         return render_template(
             "paste.html",
             paste=paste,

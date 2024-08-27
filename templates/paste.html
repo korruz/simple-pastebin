@@ -22,8 +22,8 @@
 {% endblock %} {% block content %}
 <p>
   Your paste URL:
-  <a href="{{ url_for('paste', id=paste.id, _external=True) }}"
-    >{{ url_for('paste', id=paste.id, _external=True) }}</a
+  <a href="{{ external_url_for('paste', id=paste.id) }}"
+    >{{ external_url_for('paste', id=paste.id) }}</a
   >
 </p>
 <div class="highlight" style="position: relative">
@@ -31,16 +31,16 @@
   <button class="copy">copy</button>
 </div>
 <script>
-  let copyBtn = document.querySelector('.copy')
-  copyBtn.addEventListener('click', async () => {
+  let copyBtn = document.querySelector(".copy");
+  copyBtn.addEventListener("click", async () => {
     try {
       await navigator.clipboard.writeText(
-        document.querySelector('.highlight > :not(button)').textContent
-      )
-      copyBtn.textContent = 'copied!'
+        document.querySelector(".highlight > :not(button)").textContent
+      );
+      copyBtn.textContent = "copied!";
     } catch (err) {
-      alert('Copy failed:', err)
+      alert("Copy failed:", err);
     }
-  })
+  });
 </script>
 {% endblock %}
